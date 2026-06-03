@@ -1,6 +1,7 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { readFile, writeFile, mkdir } from 'fs/promises';
 import { xdgConfig } from 'xdg-basedir';
 import type { AgentConfig, AgentType } from './types.ts';
 
@@ -40,6 +41,43 @@ export const agents: Record<AgentType, AgentConfig> = {
     globalSkillsDir: join(home, '.agents/skills'),
     detectInstalled: async () => {
       return existsSync(aiAssistHome);
+    },
+    postInstall: async ({ skillName, installPath, source, sourceType, ref }) => {
+      const registryFile = join(aiAssistHome, 'installed-skills.json');
+
+      let data: { skills: Array<Record<string, string>> } = { skills: [] };
+      try {
+        const content = await readFile(registryFile, 'utf-8');
+        data = JSON.parse(content);
+      } catch {
+        // File doesn't exist or is invalid
+      }
+
+      data.skills = data.skills.filter((s) => s.name !== skillName);
+      data.skills.push({
+        name: skillName,
+        source,
+        source_type: sourceType === 'github' ? 'git' : sourceType,
+        branch: ref || 'main',
+        installed_at: new Date().toISOString(),
+        cache_path: installPath,
+      });
+
+      await mkdir(aiAssistHome, { recursive: true });
+      await writeFile(registryFile, JSON.stringify(data, null, 2));
+    },
+    postUninstall: async ({ skillName }) => {
+      const registryFile = join(aiAssistHome, 'installed-skills.json');
+      try {
+        const content = await readFile(registryFile, 'utf-8');
+        const data = JSON.parse(content);
+        data.skills = (data.skills || []).filter(
+          (s: Record<string, string>) => s.name !== skillName
+        );
+        await writeFile(registryFile, JSON.stringify(data, null, 2));
+      } catch {
+        // File doesn't exist or is invalid — nothing to remove
+      }
     },
   },
   'aider-desk': {

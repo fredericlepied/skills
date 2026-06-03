@@ -840,6 +840,35 @@ async function handleWellKnownSkills(
     }
   }
 
+  // Call agent postInstall hooks
+  if (successful.length > 0) {
+    const successfulSkillNames = new Set(successful.map((r) => r.skill));
+    for (const agentType of targetAgents) {
+      const agentConfig = agents[agentType];
+      if (!agentConfig.postInstall) continue;
+      for (const skill of selectedSkills) {
+        if (!successfulSkillNames.has(skill.installName)) continue;
+        const result = successful.find(
+          (r) => r.skill === skill.installName && r.agent === agentConfig.displayName
+        );
+        if (!result) continue;
+        try {
+          await agentConfig.postInstall({
+            skillName: skill.name,
+            skillDescription: skill.description,
+            installPath: result.path,
+            source: sourceIdentifier,
+            sourceType: 'well-known',
+          });
+        } catch (err) {
+          p.log.warn(
+            `${agentConfig.displayName} postInstall hook failed for ${skill.name}: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
+    }
+  }
+
   if (successful.length > 0) {
     const bySkill = new Map<string, typeof results>();
     for (const r of successful) {
@@ -1691,6 +1720,38 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
             );
           } catch {
             // Don't fail installation if lock file update fails
+          }
+        }
+      }
+    }
+
+    // Call agent postInstall hooks
+    if (successful.length > 0) {
+      const successfulSkillNames = new Set(successful.map((r) => r.skill));
+      for (const agentType of targetAgents) {
+        const agentConfig = agents[agentType];
+        if (!agentConfig.postInstall) continue;
+        for (const skill of selectedSkills) {
+          const skillDisplayName = getSkillDisplayName(skill);
+          if (!successfulSkillNames.has(skillDisplayName)) continue;
+          const result = successful.find(
+            (r) => r.skill === skillDisplayName && r.agent === agentConfig.displayName
+          );
+          if (!result) continue;
+          try {
+            await agentConfig.postInstall({
+              skillName: skill.name,
+              skillDescription: skill.description,
+              installPath: result.path,
+              source: normalizedSource || parsed.url,
+              sourceType: parsed.type,
+              ref: parsed.ref,
+              skillPath: skillFiles[skill.name],
+            });
+          } catch (err) {
+            p.log.warn(
+              `${agentConfig.displayName} postInstall hook failed for ${skill.name}: ${err instanceof Error ? err.message : String(err)}`
+            );
           }
         }
       }
